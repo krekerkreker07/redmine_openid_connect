@@ -8,13 +8,12 @@ module RedmineOpenidConnect
       if auth_header.start_with?('Bearer ')
         token = auth_header.split(' ').last
         user = find_user_by_oidc_token(token)
-        
+
         if user
           User.current = user
           return user
         end
       end
-
       user
     end
 
@@ -22,23 +21,18 @@ module RedmineOpenidConnect
 
     def find_user_by_oidc_token(token)
       settings = Setting.plugin_redmine_openid_connect
-      
-      # Формуємо URL для Keycloak на основі вашого openid_connect_server_url
       base_url = settings['openid_connect_server_url'].to_s.chomp('/')
       return nil if base_url.blank?
-      
+
       userinfo_url = "#{base_url}/protocol/openid-connect/userinfo"
 
       begin
         uri = URI.parse(userinfo_url)
         http = Net::HTTP.new(uri.host, uri.port)
-        
-        # Враховуємо ваше налаштування disable_ssl_validation
+
         if uri.scheme == 'https'
           http.use_ssl = true
-          if settings['disable_ssl_validation']
-            http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-          end
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE if settings['disable_ssl_validation']
         end
 
         request = Net::HTTP::Get.new(uri.request_uri)
@@ -56,12 +50,14 @@ module RedmineOpenidConnect
         email = user_data['email']
         return nil if email.blank?
 
-        # Шукаємо користувача
         user = User.find_by_mail(email)
 
-        # Якщо користувача немає, але в налаштуваннях стоїть create_user_if_not_exists
         if user.nil? && settings['create_user_if_not_exists']
           user = create_user_from_oidc(user_data)
+        end
+
+        if user
+          sync_admin_status(user, user_data, settings)
         end
 
         user
@@ -79,12 +75,27 @@ module RedmineOpenidConnect
       user.lastname = user_data['family_name'] || 'User'
       user.random_password
       user.status = User::STATUS_ACTIVE
-      
+
       if user.save
-        user.reload
+        user
       else
         Rails.logger.error "OIDC Bearer: Failed to create user: #{user.errors.full_messages}"
         nil
+      end
+    end
+
+    def sync_admin_status(user, user_data, settings)
+      admin_group = settings['admin_group']
+      return if admin_group.blank?
+
+      user_groups = user_data['groups'] || []
+
+      is_admin = user_groups.include?(admin_group)
+
+      if user.admin != is_admin
+        user.admin = is_admin
+        user.save
+        Rails.logger.info "OIDC Bearer: Updated admin status for #{user.login} to #{is_admin}"
       end
     end
   end
