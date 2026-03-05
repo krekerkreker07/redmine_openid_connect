@@ -69,7 +69,9 @@ module RedmineOpenidConnect
 
     def create_user_from_oidc(user_data)
       user = User.new
-      user.login = user_data['preferred_username'] || user_data['email']
+      user.login = build_valid_login(user_data)
+      return nil if user.login.blank?
+
       user.mail = user_data['email']
       user.firstname = user_data['given_name'] || 'OIDC'
       user.lastname = user_data['family_name'] || 'User'
@@ -82,6 +84,31 @@ module RedmineOpenidConnect
         Rails.logger.error "OIDC Bearer: Failed to create user: #{user.errors.full_messages}"
         nil
       end
+    end
+
+    def build_valid_login(user_data)
+      base = user_data['preferred_username'].presence || user_data['email'].to_s
+      return nil if base.blank?
+
+      # If it's an email, use part before '@'
+      base = base.split('@').first if base.include?('@')
+
+      # Allow only a-z, 0-9, dot, underscore, dash
+      login = base.downcase.gsub(/[^a-z0-9._-]/, '_')
+      login = login.gsub(/^_+|_+$/, '')
+      login = login[0, 50]
+      return nil if login.blank?
+
+      unique_login = login
+      suffix = 1
+      while User.exists?(login: unique_login)
+        cut_base = login[0, 50 - (suffix.to_s.length + 1)]
+        unique_login = "#{cut_base}-#{suffix}"
+        suffix += 1
+        break if suffix > 1000
+      end
+
+      unique_login
     end
 
     def sync_admin_status(user, user_data, settings)
