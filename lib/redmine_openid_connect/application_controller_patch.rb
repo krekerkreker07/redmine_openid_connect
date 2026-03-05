@@ -74,7 +74,7 @@ module RedmineOpenidConnect
       user.firstname = user_data['given_name'] || 'OIDC'
       user.lastname = user_data['family_name'] || 'User'
       user.random_password
-      user.status = User::STATUS_ACTIVE
+      user.status = User::STATUS_ACTIVEFailed to create user
 
       if user.save
         user
