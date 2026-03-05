@@ -1,7 +1,7 @@
 module RedmineOpenidConnect
   module ApplicationControllerPatch
-    def find_current_user
-      user = super
+    def find_current_user(*args, &block)
+      user = super(*args, &block)
       return user if user
 
       auth_header = request.headers['Authorization'].to_s
@@ -74,7 +74,7 @@ module RedmineOpenidConnect
       user.firstname = user_data['given_name'] || 'OIDC'
       user.lastname = user_data['family_name'] || 'User'
       user.random_password
-      user.status = User::STATUS_ACTIVEFailed to create user
+      user.status = User::STATUS_ACTIVE
 
       if user.save
         user
