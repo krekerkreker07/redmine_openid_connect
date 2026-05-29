@@ -104,16 +104,7 @@ module RedmineOpenidConnect
 
           user.login = user_info["user_name"] || user_info["nickname"] || user_info["preferred_username"] || user_info["email"]
 
-          firstname = user_info["given_name"]
-          lastname = user_info["family_name"]
-
-          if (firstname.nil? || lastname.nil?) && user_info["name"]
-            parts = user_info["name"].split
-            if parts.length >= 2
-              firstname = parts[0]
-              lastname = parts[-1]
-            end
-          end
+          firstname, lastname = names_from_user_info(user_info)
 
           attributes = {
             firstname: firstname || "",
@@ -141,6 +132,10 @@ module RedmineOpenidConnect
           end
         else
           user.update_attribute(:admin, oic_session.admin?)
+
+          # sync firstname/lastname from the token on every login
+          sync_user_names!(user, user_info)
+
           oic_session.user_id = user.id
           oic_session.save!
           # redirect back to initial URL
@@ -173,6 +168,42 @@ module RedmineOpenidConnect
     def rpiframe
       @oic_session = OicSession.find(session[:oic_session_id])
       render layout: false
+    end
+
+    # Extracts firstname/lastname from the OpenID Connect user info.
+    # Falls back to splitting the "name" claim when given_name/family_name
+    # are not provided by the identity provider.
+    def names_from_user_info(user_info)
+      firstname = user_info["given_name"]
+      lastname  = user_info["family_name"]
+
+      if (firstname.nil? || lastname.nil?) && user_info["name"]
+        parts = user_info["name"].split
+        if parts.length >= 2
+          firstname = parts[0]
+          lastname  = parts[-1]
+        end
+      end
+
+      [firstname, lastname]
+    end
+
+    # Compares the names from the token against the ones currently stored in
+    # Redmine and persists them only when they actually differ.
+    def sync_user_names!(user, user_info)
+      firstname, lastname = names_from_user_info(user_info)
+
+      changes = {}
+      changes[:firstname] = firstname if firstname.present? && firstname != user.firstname
+      changes[:lastname]  = lastname  if lastname.present?  && lastname  != user.lastname
+
+      return if changes.empty?
+
+      if user.update(changes)
+        logger.info "Updated user #{user.login} names from OpenID token: #{changes.inspect}"
+      else
+        logger.warn "Could not update names for user #{user.login}: #{user.errors.full_messages.join(', ')}"
+      end
     end
 
     def authorize_params
