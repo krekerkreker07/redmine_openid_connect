@@ -57,6 +57,7 @@ module RedmineOpenidConnect
         end
 
         if user
+          sync_user_names(user, user_data)
           sync_admin_status(user, user_data, settings)
         end
 
@@ -109,6 +110,38 @@ module RedmineOpenidConnect
       end
 
       unique_login
+    end
+
+    def sync_user_names(user, user_data)
+      firstname = user_data['given_name']
+      lastname  = user_data['family_name']
+
+      # Fall back to the "name" claim when given_name/family_name are missing
+      if (firstname.blank? || lastname.blank?) && user_data['name'].present?
+        parts = user_data['name'].split
+        if parts.length >= 2
+          firstname = parts.first if firstname.blank?
+          lastname  = parts.last  if lastname.blank?
+        end
+      end
+
+      changed = false
+      if firstname.present? && firstname != user.firstname
+        user.firstname = firstname
+        changed = true
+      end
+      if lastname.present? && lastname != user.lastname
+        user.lastname = lastname
+        changed = true
+      end
+
+      return unless changed
+
+      if user.save
+        Rails.logger.info "OIDC Bearer: Updated names for #{user.login} -> #{user.firstname} #{user.lastname}"
+      else
+        Rails.logger.error "OIDC Bearer: Failed to update names for #{user.login}: #{user.errors.full_messages}"
+      end
     end
 
     def sync_admin_status(user, user_data, settings)
