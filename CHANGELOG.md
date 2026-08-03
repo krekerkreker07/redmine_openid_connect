@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+* Enforce Identity organization membership on the server: new `organization`
+  setting (falls back to `KEYCLOAK_ORG_ALIAS`) rejects browser logins and
+  Bearer-token API requests whose token does not list this tenant's organization
+
 ## ??? 0.9.5
 * Pull server-side errors from locale files
 * Log-messages/some less prominent errors hard-coded in English again 

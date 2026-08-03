@@ -47,6 +47,17 @@ module RedmineOpenidConnect
         end
 
         user_data = JSON.parse(response.body)
+
+        # Reject tokens issued for a user outside this tenant's Identity
+        # organization, even when the token itself is valid. The organization
+        # claim may live in the access token or in the userinfo response,
+        # depending on how the membership mapper is configured.
+        unless OicSession.organization_member?(user_data, decode_token_payload(token))
+          Rails.logger.warn "OIDC Bearer: user #{user_data['email']} is not a member of " \
+                            "organization '#{OicSession.organization_alias}', access refused"
+          return nil
+        end
+
         email = user_data['email']
         return nil if email.blank?
 
@@ -66,6 +77,20 @@ module RedmineOpenidConnect
         Rails.logger.error "OIDC Bearer Exception: #{e.message}"
         nil
       end
+    end
+
+    # Decodes the JWT payload of a bearer token without verifying its signature.
+    # Verification already happened at the userinfo endpoint; this only reads the
+    # claims Keycloak put into the access token (e.g. `organization`).
+    def decode_token_payload(token)
+      payload = token.to_s.split('.')[1]
+      return nil if payload.blank?
+
+      payload += '=' * ((4 - payload.length % 4) % 4)
+      JSON.parse(Base64.urlsafe_decode64(payload))
+    rescue StandardError => e
+      Rails.logger.warn "OIDC Bearer: could not decode token payload: #{e.message}"
+      nil
     end
 
     def create_user_from_oidc(user_data)

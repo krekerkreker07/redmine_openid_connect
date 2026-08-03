@@ -9,6 +9,7 @@ de:
     client_secret: Client-Secret
     group: Rolle "darf einloggen" (leer lassen, falls jeder authentifizierte User einloggen darf)
     admin_group: Rolle "Administratoren" (User mit dieser Rolle werden als Administrator behandelt)
+    organization: Alias der Identity-Organisation (leer lassen, um die Mitgliedschaftsprüfung zu deaktivieren)
     dynamic_config_expiry: "Intervall für Aktualisierung der OpenID-Einstellungen (Default: 1 day)"
     create_user_if_not_exists: "Benutzer erstellen, falls nicht vorhanden"
     disallowed_auth_sources_login: "Benutzer aus den folgenden Authentifizierungsquellen müssen sich mit SSO anmelden"
@@ -16,4 +17,5 @@ de:
   oic_cannot_create_user: "Der Benutzer %{value} konnte nicht angelegt werden: "
   oic_try_another_account: "<a href='%{value}'>Mit einem anderen Account einloggen.</a>"
   oic_cannot_login_user: "Benutzer %{value} konnte sich nicht anmelden: Bitte melden Sie sich mit der SSO-Option an"
+  oic_not_organization_member: "Ihr Konto gehört nicht zu dieser Organisation."
   button_login_sso: Melden Sie sich mit SSO an

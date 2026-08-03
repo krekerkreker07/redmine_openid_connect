@@ -38,6 +38,56 @@ class OicSession < ActiveRecord::Base
     client_config['disallowed_auth_sources_login'].to_a
   end
 
+  # Alias of the Identity organization this tenant belongs to. Configured in the
+  # plugin settings; falls back to the KEYCLOAK_ORG_ALIAS environment variable so
+  # a tenant deployment can seed it the same way the SPA gets its alias.
+  # Blank means "no organization enforcement" (single-tenant stand).
+  def self.organization_alias
+    value = client_config['organization']
+    value = ENV['KEYCLOAK_ORG_ALIAS'] if value.blank?
+    value.to_s.strip.presence
+  end
+
+  def self.organization_enforced?
+    organization_alias.present?
+  end
+
+  # Normalizes the `organization` claim into a list of organization aliases.
+  # Identity emits different shapes depending on the mapper configuration:
+  #   ["acme"]                              - plain membership mapper
+  #   {"acme" => {"id" => "..."}}           - mapper with organization attributes
+  #   [{"alias" => "acme", "id" => "..."}]  - list of organization objects
+  #   "acme"                                - single value
+  def self.organization_aliases(claims)
+    value = claims.is_a?(Hash) ? (claims['organization'] || claims[:organization]) : nil
+
+    aliases = case value
+              when Hash
+                value.keys
+              when Array
+                value.map { |entry| entry.is_a?(Hash) ? (entry['alias'] || entry['name']) : entry }
+              when String
+                [value]
+              else
+                []
+              end
+
+    aliases.map { |a| a.to_s.strip }.reject(&:blank?)
+  end
+
+  # True when at least one of the given claim payloads (access token, ID token,
+  # userinfo response) lists this tenant's organization. Always true when no
+  # organization is configured, keeping single-tenant installations unchanged.
+  def self.organization_member?(*claim_sources)
+    expected = organization_alias
+    return true if expected.blank?
+
+    expected = expected.downcase
+    claim_sources.compact.any? do |claims|
+      organization_aliases(claims).any? { |a| a.downcase == expected }
+    end
+  end
+
   def self.openid_configuration_url
     client_config['openid_connect_server_url'] + '/.well-known/openid-configuration'
   end
@@ -126,7 +176,7 @@ class OicSession < ActiveRecord::Base
   end
 
   def check_keycloak_role(role)
-    # keycloak way...
+    # Identity way...
     kc_is_in_role = false
     if user["realm_access"].present?
       kc_is_in_role = user["realm_access"]["roles"].include?(role)
@@ -156,6 +206,25 @@ class OicSession < ActiveRecord::Base
     return false
   end
 
+  # Server-side membership check for the tenant's Identity organization.
+  # Identity's "Requires user membership" step is the primary gate; this is the
+  # backend safety net for tokens obtained without the `organization:<alias>`
+  # scope. The mapper may be enabled for any subset of access token / ID token /
+  # userinfo, so a match in any of them counts as membership.
+  def organization_member?(user_info = nil)
+    return true unless self.class.organization_enforced?
+
+    sources = []
+    sources << user if access_token.present? || id_token.present?
+    sources << claims if id_token.present?
+    sources << user_info
+
+    self.class.organization_member?(*sources)
+  rescue StandardError => e
+    Rails.logger.warn "OIDC: could not read organization claim (#{e.class}: #{e.message}), treating as non-member"
+    false
+  end
+
   def admin?
     if client_config['admin_group'].present?
       if user["member_of"].present?
@@ -164,7 +233,7 @@ class OicSession < ActiveRecord::Base
       if user["roles"].present? 
         return true if user["roles"].include?(client_config['admin_group'])
       end
-      # keycloak way...
+      # Identity way...
       return true if check_keycloak_role client_config['admin_group']
     end
     
@@ -172,7 +241,7 @@ class OicSession < ActiveRecord::Base
   end
 
   def user
-    if access_token? # keycloak way...
+    if access_token? # Identity way...
       @user = JSON::parse(Base64::decode64(access_token.split('.')[1]))
     else
       @user = JSON::parse(Base64::decode64(id_token.split('.')[1]))

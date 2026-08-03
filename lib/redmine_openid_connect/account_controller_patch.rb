@@ -87,6 +87,14 @@ module RedmineOpenidConnect
           return invalid_credentials
         end
 
+        # verify the token was issued for a member of this tenant's organization
+        unless oic_session.organization_member?(user_info)
+          logger.warn "User #{user_info["email"]} is not a member of organization " \
+                      "'#{OicSession.organization_alias}', login refused"
+          flash.now[:warning] = l(:oic_not_organization_member)
+          return invalid_credentials
+        end
+
         # Check if there's already an existing user
         user = User.find_by_mail(user_info["email"])
 

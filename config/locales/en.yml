@@ -10,6 +10,7 @@ en:
     client_secret: Client Secret
     group: Authorized group (blank if all users are authorized)
     admin_group: Admins group (members of this group are treated as admin)
+    organization: Identity organization alias (blank to disable the membership check)
     dynamic_config_expiry: How often to retrieve openid configuration (default 1 day)
     create_user_if_not_exists: Create user if not exists
     disallowed_auth_sources_login: Users from the following auth sources will be required to login with SSO
@@ -17,4 +18,5 @@ en:
   oic_cannot_create_user: "Could not create the user %{value}: "
   oic_try_another_account: "<a href='%{value}'>Try logging in with another account</a>"
   oic_cannot_login_user: "User %{value} could not login: Please login using the SSO option"
+  oic_not_organization_member: "Your account does not belong to this organization."
   button_login_sso: Login with SSO
