@@ -67,10 +67,10 @@ module RedmineOpenidConnect
           user = create_user_from_oidc(user_data)
         end
 
-        if user
-          sync_user_names(user, user_data)
-          sync_admin_status(user, user_data, settings)
-        end
+        # The admin flag is not synced from the token (SPR-383): it belongs to the tracker's
+        # role model, and the `groups` claim differed between clients, so every request from a
+        # client without it took the flag away again.
+        sync_user_names(user, user_data) if user
 
         user
       rescue => e
@@ -166,21 +166,6 @@ module RedmineOpenidConnect
         Rails.logger.info "OIDC Bearer: Updated names for #{user.login} -> #{user.firstname} #{user.lastname}"
       else
         Rails.logger.error "OIDC Bearer: Failed to update names for #{user.login}: #{user.errors.full_messages}"
-      end
-    end
-
-    def sync_admin_status(user, user_data, settings)
-      admin_group = settings['admin_group']
-      return if admin_group.blank?
-
-      user_groups = user_data['groups'] || []
-
-      is_admin = user_groups.include?(admin_group)
-
-      if user.admin != is_admin
-        user.admin = is_admin
-        user.save
-        Rails.logger.info "OIDC Bearer: Updated admin status for #{user.login} to #{is_admin}"
       end
     end
   end

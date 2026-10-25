@@ -125,7 +125,6 @@ module RedmineOpenidConnect
           user.assign_attributes attributes
 
           if user.save
-            user.update_attribute(:admin, oic_session.admin?)
             oic_session.user_id = user.id
             oic_session.save!
             # after user creation just show "My Page" don't redirect to remember
@@ -139,7 +138,7 @@ module RedmineOpenidConnect
             return invalid_credentials
           end
         else
-          user.update_attribute(:admin, oic_session.admin?)
+          # SPR-383: the admin flag is left to the tracker's role model.
 
           # sync firstname/lastname from the token on every login
           sync_user_names!(user, user_info)

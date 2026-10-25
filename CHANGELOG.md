@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+* Stop writing the Redmine `admin` flag from the token or the `admin_group` setting (SPR-383).
+  Clients sent different `groups` claims, so the flag flipped from request to request; the
+  tracker's role model (redmine_extended_api) now decides who is an administrator.
 * Enforce Identity organization membership on the server: new `organization`
   setting (falls back to `KEYCLOAK_ORG_ALIAS`) rejects browser logins and
   Bearer-token API requests whose token does not list this tenant's organization
