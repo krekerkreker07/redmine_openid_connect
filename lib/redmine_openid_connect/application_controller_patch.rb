@@ -32,7 +32,7 @@ module RedmineOpenidConnect
 
         if uri.scheme == 'https'
           http.use_ssl = true
-          http.verify_mode = OpenSSL::SSL::VERIFY_NONE if settings['disable_ssl_validation']
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
         end
 
         request = Net::HTTP::Get.new(uri.request_uri)
@@ -73,6 +73,11 @@ module RedmineOpenidConnect
         sync_user_names(user, user_data) if user
 
         user
+      rescue OpenSSL::SSL::SSLError => e
+        Rails.logger.error "OIDC Bearer: TLS verification of #{userinfo_url} failed (#{e.message}). " \
+                           "Certificate checks can no longer be switched off (the disable_ssl_validation " \
+                           "setting was removed in SPR-554); give the Identity provider a valid certificate."
+        nil
       rescue => e
         Rails.logger.error "OIDC Bearer Exception: #{e.message}"
         nil
@@ -80,8 +85,10 @@ module RedmineOpenidConnect
     end
 
     # Decodes the JWT payload of a bearer token without verifying its signature.
-    # Verification already happened at the userinfo endpoint; this only reads the
-    # claims Keycloak put into the access token (e.g. `organization`).
+    # Safe only because it runs after the userinfo endpoint accepted this very token
+    # over a certificate-verified connection: Keycloak checked the signature, so the
+    # payload cannot have been altered. It only adds the claims Keycloak put into the
+    # access token (e.g. `organization`) to what userinfo returned.
     def decode_token_payload(token)
       payload = token.to_s.split('.')[1]
       return nil if payload.blank?

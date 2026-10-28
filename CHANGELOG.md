@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+* Always verify the Identity provider's TLS certificate: the `disable_ssl_validation`
+  setting is gone (SPR-554). It switched off verification for Bearer-token checks and,
+  through HTTParty's global defaults, for every HTTParty call in the process. A value left
+  in the database is ignored; a failing handshake is logged with the reason.
 * Stop writing the Redmine `admin` flag from the token or the `admin_group` setting (SPR-383).
   Clients sent different `groups` claims, so the flag flipped from request to request; the
   tracker's role model (redmine_extended_api) now decides who is an administrator.
