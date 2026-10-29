@@ -48,6 +48,10 @@ class OicSession < ActiveRecord::Base
     value.to_s.strip.presence
   end
 
+  def self.client_secret
+    ENV['OIDC_CLIENT_SECRET'].presence || client_config['client_secret']
+  end
+
   def self.organization_enforced?
     organization_alias.present?
   end
@@ -114,7 +118,7 @@ class OicSession < ActiveRecord::Base
     response = HTTParty.post(
       uri,
       body: query,
-      basic_auth: {username: client_config['client_id'], password: client_config['client_secret'] }
+      basic_auth: {username: client_config['client_id'], password: client_secret }
     )
   end
 
