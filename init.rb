@@ -1,6 +1,7 @@
 require 'redmine'
 require_relative 'lib/redmine_openid_connect/application_controller_patch'
 require_relative 'lib/redmine_openid_connect/account_controller_patch'
+require_relative 'lib/redmine_openid_connect/setting_patch'
 require_relative 'lib/redmine_openid_connect/hooks'
 
 Redmine::Plugin.register :redmine_openid_connect do
@@ -17,4 +18,5 @@ end
 
 ApplicationController.prepend(RedmineOpenidConnect::ApplicationControllerPatch)
 AccountController.prepend(RedmineOpenidConnect::AccountControllerPatch)
+Setting.singleton_class.prepend(RedmineOpenidConnect::SettingPatch)
 

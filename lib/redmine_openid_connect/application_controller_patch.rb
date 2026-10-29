@@ -1,7 +1,24 @@
 module RedmineOpenidConnect
   module ApplicationControllerPatch
+    # SPR-546: the product signs in through Keycloak only. Redmine's own credentials are never
+    # looked at: the per-user API key (`?key=`, `X-Redmine-API-Key`, also as the Basic user
+    # name), Basic with a login and password, Redmine 7's own OAuth tokens (Doorkeeper) and
+    # an admin's `X-Redmine-Switch-User`. Each of them outlived the Keycloak account — an
+    # offboarded user kept the API key, and neither logout nor the token TTL touched it.
+    #
+    # Core reads all of them in one branch of `find_current_user`, guarded by
+    # `Setting.rest_api_enabled? && accept_api_auth?`. The setting cannot simply be switched
+    # off: `require_login` checks it as well and then answers an API request without a user
+    # with 403 instead of 401, and the SPA re-authenticates only on 401. So `accept_api_auth?`
+    # says no while the user is being found, and only then. The session cookie of the raw
+    # web UI is read before that branch and is not affected.
     def find_current_user(*args, &block)
-      user = super(*args, &block)
+      user = begin
+        @ignore_redmine_credentials = true
+        super(*args, &block)
+      ensure
+        @ignore_redmine_credentials = false
+      end
       return user if user
 
       auth_header = request.headers['Authorization'].to_s
@@ -15,6 +32,18 @@ module RedmineOpenidConnect
         end
       end
       user
+    end
+
+    def accept_api_auth?(*args)
+      return false if @ignore_redmine_credentials
+
+      super
+    end
+
+    # SPR-546: the Atom feeds' own `?key=` (a second static per-user key) is refused too. The
+    # SPA reads `/activity.atom` with its Bearer token, which does not depend on this.
+    def accept_atom_auth?(*)
+      false
     end
 
     private
