@@ -27,26 +27,8 @@ module RedmineOpenidConnect
       userinfo_url = "#{base_url}/protocol/openid-connect/userinfo"
 
       begin
-        uri = URI.parse(userinfo_url)
-        http = Net::HTTP.new(uri.host, uri.port)
-
-        if uri.scheme == 'https'
-          http.use_ssl = true
-          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-        end
-
-        request = Net::HTTP::Get.new(uri.request_uri)
-        request['Authorization'] = "Bearer #{token}"
-        request['Accept'] = 'application/json'
-
-        response = http.request(request)
-
-        unless response.code == '200'
-          Rails.logger.error "OIDC Bearer Error: Provider returned #{response.code} - #{response.body}"
-          return nil
-        end
-
-        user_data = JSON.parse(response.body)
+        user_data = cached_userinfo(token, userinfo_url)
+        return nil unless user_data
 
         # Reject tokens issued for a user outside this tenant's Identity
         # organization, even when the token itself is valid. The organization
@@ -84,11 +66,67 @@ module RedmineOpenidConnect
       end
     end
 
+    # SPR-561: the longest a userinfo answer is reused. Keycloak access tokens live 5 minutes,
+    # so this is also the longest a token revoked in Keycloak (logout, disabled user) keeps
+    # working here.
+    USERINFO_CACHE_MAX_TTL = 300
+
+    # SPR-561: Keycloak is asked about a token once, not on every request it comes with. The
+    # SPA sends the same token with every call for its whole lifetime, and each call used to
+    # wait for a synchronous userinfo round trip. Only an answer Keycloak gave with 200 is kept,
+    # under a digest of the whole token and no longer than the token's own `exp`, so a forged
+    # or altered token never reaches another token's entry and an expired one is asked again.
+    def cached_userinfo(token, userinfo_url)
+      ttl = userinfo_cache_ttl(token)
+      return request_userinfo(token, userinfo_url) unless ttl
+
+      key = "oidc_userinfo/#{Digest::SHA256.hexdigest(token)}"
+      cached = Rails.cache.read(key)
+      return cached if cached.is_a?(Hash)
+
+      user_data = request_userinfo(token, userinfo_url)
+      Rails.cache.write(key, user_data, expires_in: ttl) if user_data
+      user_data
+    end
+
+    def userinfo_cache_ttl(token)
+      exp = decode_token_payload(token)&.dig('exp')
+      return nil unless exp.is_a?(Integer)
+
+      ttl = [exp - Time.now.to_i, USERINFO_CACHE_MAX_TTL].min
+      ttl.positive? ? ttl : nil
+    end
+
+    def request_userinfo(token, userinfo_url)
+      uri = URI.parse(userinfo_url)
+      http = Net::HTTP.new(uri.host, uri.port)
+
+      if uri.scheme == 'https'
+        http.use_ssl = true
+        http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      end
+
+      request = Net::HTTP::Get.new(uri.request_uri)
+      request['Authorization'] = "Bearer #{token}"
+      request['Accept'] = 'application/json'
+
+      response = http.request(request)
+
+      unless response.code == '200'
+        Rails.logger.error "OIDC Bearer Error: Provider returned #{response.code} - #{response.body}"
+        return nil
+      end
+
+      user_data = JSON.parse(response.body)
+      user_data.is_a?(Hash) ? user_data : nil
+    end
+
     # Decodes the JWT payload of a bearer token without verifying its signature.
     # Safe only because it runs after the userinfo endpoint accepted this very token
     # over a certificate-verified connection: Keycloak checked the signature, so the
     # payload cannot have been altered. It only adds the claims Keycloak put into the
-    # access token (e.g. `organization`) to what userinfo returned.
+    # access token (e.g. `organization`) to what userinfo returned. `cached_userinfo` reads
+    # `exp` before that, but keeps nothing unless userinfo accepts the token, signature and all.
     def decode_token_payload(token)
       payload = token.to_s.split('.')[1]
       return nil if payload.blank?

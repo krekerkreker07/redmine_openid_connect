@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+* Ask the Identity provider about a Bearer token once, not on every request (SPR-561): the
+  userinfo answer is kept in `Rails.cache` under a digest of the token until the token's
+  `exp`, at most five minutes. Only accepted tokens are kept; the organization check still
+  runs on every request. A token revoked in Keycloak keeps working here until that entry ends.
 * Always verify the Identity provider's TLS certificate: the `disable_ssl_validation`
   setting is gone (SPR-554). It switched off verification for Bearer-token checks and,
   through HTTParty's global defaults, for every HTTParty call in the process. A value left
